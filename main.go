@@ -11,12 +11,21 @@ import (
     "github.com/gorilla/mux"
 )
 
+type urlMap struct {
+    shortCode   string
+    longURL     string
+}
+
+var sqlconn *sql.DB
+var err error
+
 const shortURLLength = 6
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 
 func main(){
     initDB()
+    defer sqlconn.Close()
 
     router := mux.NewRouter()
     router.HandleFunc("/shorten", shortenerHandler )
@@ -28,15 +37,12 @@ func main(){
 func initDB(){
     sqlStr := "host=localhost port=5432 user=postgres password=postgres sslmode=disable"    
     // Open psql connection
-    sqlconn, err := sql.Open("postgres", sqlStr)
+    sqlconn, err = sql.Open("postgres", sqlStr)
 
     if err != nil {
         panic(err)
         return
     }
-
-    // Close psql connection with defer
-    defer sqlconn.Close()
 
     err = sqlconn.Ping()
     
@@ -47,6 +53,15 @@ func initDB(){
     }
     
     fmt.Println("Connection to database successful!")
+}
+
+func insertShortCode(urlItem *urlMap){
+    sqlStr := `INSERT INTO "urls" (short_code, long_url) VALUES($1, $2)` 
+    _, err := sqlconn.Exec(sqlStr, urlItem.shortCode,urlItem.longURL)
+
+    if err != nil {
+        panic(err)
+    }
 }
 
 func generateShortURL() string {
@@ -60,7 +75,13 @@ func generateShortURL() string {
 
 func shortenerHandler(w http.ResponseWriter, r *http.Request){
     shortCode := generateShortURL() 
-    //longURL := r.URL.Query().Get("url")
+    longURL := r.URL.Query().Get("url")
+
+    var urlItem urlMap 
+    urlItem.shortCode = shortCode
+    urlItem.longURL = longURL
+
+    insertShortCode(&urlItem)
 
     fmt.Fprintf(w, "http://localhost:8080/%v\n", shortCode)
 }
